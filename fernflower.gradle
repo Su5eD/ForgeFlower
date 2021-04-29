@@ -60,7 +60,7 @@ jar {
     }
     manifest {
         attributes(
-            'Main-Class' : 'org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler',
+            'Main-Class' : 'de.fernflower.main.decompiler.ConsoleDecompiler',
             'Multi-Release': 'true'
         )
     }
