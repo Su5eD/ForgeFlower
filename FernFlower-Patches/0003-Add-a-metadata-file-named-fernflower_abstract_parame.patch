@@ -2,7 +2,7 @@ From 2e307411037ad4bd322adf50a60e338f920a0c94 Mon Sep 17 00:00:00 2001
 From: Su5eD <su5ed@outlook.com>
 Date: Thu, 29 Apr 2021 13:17:44 +0200
 Subject: [PATCH] Add a metadata file named
- 'fernflower_abstract_parameter_names.txt' to rename abstract parameters.
+ 'fernflower_abstract_parameter_names.txt' to rename abstract parameters. (backport of a patch by LexManos)
 
 diff --git a/src/de/fernflower/main/ClassWriter.java b/src/de/fernflower/main/ClassWriter.java
 index 8c79fa1..5e6adda 100644

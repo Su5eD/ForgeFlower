@@ -1,7 +1,7 @@
 From 8a05e93b258883c3ca59d55821f912ff2f72751c Mon Sep 17 00:00:00 2001
 From: Su5eD <su5ed@outlook.com>
 Date: Thu, 29 Apr 2021 20:33:20 +0200
-Subject: [PATCH] Natural enum formatting
+Subject: [PATCH] Natural enum formatting (backport of commit 495589a81532a9a5ee32bea8f1a2a6ac7420d3e2)
 
 diff --git a/src/de/fernflower/main/ClassWriter.java b/src/de/fernflower/main/ClassWriter.java
 index 5e6adda..362a654 100644

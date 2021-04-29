@@ -2,7 +2,7 @@ From 7c305ceb564caedb40fb3b7bdc670f412423aa81 Mon Sep 17 00:00:00 2001
 From: Su5eD <su5ed@outlook.com>
 Date: Thu, 29 Apr 2021 08:06:10 +0200
 Subject: [PATCH] Add support for destination to be a zip file if there is only
- one input, and it is a file.
+ one input, and it is a file. (backport of a patch by LexManos)
 
 diff --git a/src/de/fernflower/main/decompiler/ConsoleDecompiler.java b/src/de/fernflower/main/decompiler/ConsoleDecompiler.java
 index b1c0334..018ec83 100644
