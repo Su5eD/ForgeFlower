@@ -1,0 +1,217 @@
+From 2e307411037ad4bd322adf50a60e338f920a0c94 Mon Sep 17 00:00:00 2001
+From: Su5eD <su5ed@outlook.com>
+Date: Thu, 29 Apr 2021 13:17:44 +0200
+Subject: [PATCH] Add a metadata file named
+ 'fernflower_abstract_parameter_names.txt' to rename abstract parameters.
+
+diff --git a/src/de/fernflower/main/ClassWriter.java b/src/de/fernflower/main/ClassWriter.java
+index 8c79fa1..5e6adda 100644
+--- a/src/de/fernflower/main/ClassWriter.java
++++ b/src/de/fernflower/main/ClassWriter.java
+@@ -928,6 +928,9 @@ public class ClassWriter {
+ 					
+ 					bufstrwriter.write(" ");
+ 					String parname = meth.varproc.getVarName(new VarVersionPaar(index, 0));
++					if ((flags & (CodeConstants.ACC_ABSTRACT | CodeConstants.ACC_NATIVE)) != 0) {
++						parname = DecompilerContext.getStructcontext().renameAbstractParameter(meth.methodStruct.getClassStruct().qualifiedName, mt.getName(), mt.getDescriptor(), index - (((flags & CodeConstants.ACC_STATIC) == 0) ? 1 : 0), parname);
++					}
+ 					bufstrwriter.write(parname==null?"param"+index:parname); // null iff decompiled with errors
+ 					firstpar = false;
+ 					param_count_explicit++;
+diff --git a/src/de/fernflower/main/Fernflower.java b/src/de/fernflower/main/Fernflower.java
+index 2c594f0..0a1be2d 100644
+--- a/src/de/fernflower/main/Fernflower.java
++++ b/src/de/fernflower/main/Fernflower.java
+@@ -42,13 +42,11 @@ public class Fernflower implements IDecompiledData {
+ 	public Fernflower(IBytecodeProvider provider, IDecompilatSaver saver,
+ 			HashMap<String, Object> propertiesCustom) {
+ 
+-		StructContext context = new StructContext(saver, this, new LazyLoader(provider));
+-		
+-		structcontext = context;
+-
+ 		DecompilerContext.initContext(propertiesCustom);
+ 		DecompilerContext.setCountercontainer(new CounterContainer());
+-
++		
++		StructContext context = new StructContext(saver, this, new LazyLoader(provider));
++		DecompilerContext.setStructcontext(structcontext = context);
+ 	}
+ 
+ 	public void decompileContext() {
+@@ -62,7 +60,6 @@ public class Fernflower implements IDecompiledData {
+ 		clprocessor = new ClassesProcessor(structcontext);
+ 		
+ 		DecompilerContext.setClassprocessor(clprocessor);
+-		DecompilerContext.setStructcontext(structcontext);
+ 		
+ 		structcontext.saveContext();
+ 	}
+diff --git a/src/de/fernflower/struct/ContextUnit.java b/src/de/fernflower/struct/ContextUnit.java
+index 4c47641..ef6f3be 100644
+--- a/src/de/fernflower/struct/ContextUnit.java
++++ b/src/de/fernflower/struct/ContextUnit.java
+@@ -14,14 +14,19 @@
+ 
+ package de.fernflower.struct;
+ 
++import java.io.File;
+ import java.io.IOException;
++import java.nio.charset.StandardCharsets;
+ import java.util.ArrayList;
+ import java.util.List;
+ import java.util.jar.Manifest;
++import java.util.zip.ZipFile;
+ 
++import de.fernflower.main.DecompilerContext;
+ import de.fernflower.main.extern.IDecompilatSaver;
+ import de.fernflower.struct.lazy.LazyLoader;
+ import de.fernflower.struct.lazy.LazyLoader.Link;
++import de.fernflower.util.InterpreterUtil;
+ 
+ public class ContextUnit {
+ 	
+@@ -89,6 +94,23 @@ public class ContextUnit {
+ 	}
+ 	
+ 	public void addOtherEntry(String fullpath, String entry) {
++		if ("fernflower_abstract_parameter_names.txt".equals(entry)) {
++			byte[] data;
++			try {
++				if (type == TYPE_JAR || type == TYPE_ZIP) {
++					try (ZipFile archive = new ZipFile(fullpath)) {
++						data = InterpreterUtil.getBytes(archive, archive.getEntry(entry));
++					}
++				} else {
++					data = InterpreterUtil.getBytes(new File(fullpath));
++				}
++				DecompilerContext.getStructcontext().loadAbstractMetadata(new String(data, StandardCharsets.UTF_8));
++			}
++			catch (IOException e) {
++				e.printStackTrace();
++			}
++			return;
++		}
+ 		otherentries.add(new String[]{fullpath, entry});
+ 	}
+ 
+diff --git a/src/de/fernflower/struct/StructContext.java b/src/de/fernflower/struct/StructContext.java
+index 1cef3b0..2b0eae0 100644
+--- a/src/de/fernflower/struct/StructContext.java
++++ b/src/de/fernflower/struct/StructContext.java
+@@ -16,15 +16,22 @@ package de.fernflower.struct;
+ 
+ import java.io.File;
+ import java.io.IOException;
++import java.util.ArrayList;
+ import java.util.Enumeration;
+ import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
+ import java.util.jar.JarFile;
+ import java.util.zip.ZipEntry;
+ import java.util.zip.ZipFile;
+ 
++import de.fernflower.code.CodeConstants;
+ import de.fernflower.main.DecompilerContext;
+ import de.fernflower.main.extern.IDecompilatSaver;
+ import de.fernflower.main.extern.IFernflowerLogger;
++import de.fernflower.struct.gen.generics.GenericMain;
++import de.fernflower.struct.gen.generics.GenericMethodDescriptor;
++import de.fernflower.struct.gen.generics.GenericType;
+ import de.fernflower.struct.lazy.LazyLoader;
+ 
+ 
+@@ -40,6 +47,8 @@ public class StructContext {
+ 	
+ 	private HashMap<String, ContextUnit> units = new HashMap<String, ContextUnit>();
+ 	
++	private final Map<String, List<String>> abstractNames = new HashMap<>();
++	
+ 	private ContextUnit defaultUnit;  
+ 
+ 	private IDecompilatSaver saver; 
+@@ -208,4 +217,36 @@ public class StructContext {
+ 		return classes;
+ 	}
+ 
++	public void loadAbstractMetadata(String string) {
++		for (String line : string.split("\n")) {
++			String[] pts = line.split(" ");
++			if (pts.length < 4) //class method desc [args...]
++				continue;
++			GenericMethodDescriptor desc = GenericMain.parseMethodSignature(pts[2]);
++			List<String> params = new ArrayList<>();
++			for (int x = 0; x < pts.length - 3; x++) {
++				for (int y = 0; y < getStackSize(desc.params.get(x)); y++)
++					params.add(pts[x+3]);
++			}
++			this.abstractNames.put(pts[0] + ' '+ pts[1] + ' ' + pts[2], params);
++		}
++	}
++
++	private int getStackSize(GenericType genericType) {
++		if(genericType.arraydim > 0) {
++			return 1;
++		} else {
++			return (genericType.type == CodeConstants.TYPE_DOUBLE ||
++					genericType.type == CodeConstants.TYPE_LONG)?2:
++					((genericType.type == CodeConstants.TYPE_VOID ||
++							genericType.type == CodeConstants.TYPE_GROUP2EMPTY)?0:1);
++		}
++	}
++
++	public String renameAbstractParameter(String className, String methodName, String descriptor, int index, String _default) {
++		if (className.contains("IPixelTransformer"))
++			System.currentTimeMillis();
++		List<String> params = this.abstractNames.get(className + ' ' + methodName + ' ' + descriptor);
++		return params != null && index < params.size() ? params.get(index) : _default;
++	}
+ }
+diff --git a/src/de/fernflower/util/InterpreterUtil.java b/src/de/fernflower/util/InterpreterUtil.java
+index b4ebbcc..adf899e 100644
+--- a/src/de/fernflower/util/InterpreterUtil.java
++++ b/src/de/fernflower/util/InterpreterUtil.java
+@@ -24,6 +24,8 @@ import java.nio.channels.FileChannel;
+ import java.util.Collection;
+ import java.util.HashSet;
+ import java.util.List;
++import java.util.zip.ZipEntry;
++import java.util.zip.ZipFile;
+ 
+ public class InterpreterUtil {
+ 	
+@@ -147,4 +149,30 @@ public class InterpreterUtil {
+ 		return name+" "+descriptor;
+ 	}
+ 	
++	public static byte[] getBytes(ZipFile archive, ZipEntry entry) throws IOException {
++    	try (InputStream stream = archive.getInputStream(entry)) {
++      		return readBytes(stream, (int)entry.getSize());
++    	}
++  }
++	
++	public static byte[] getBytes(File file) throws IOException {
++		try (FileInputStream stream = new FileInputStream(file)) {
++			return readBytes(stream, (int)file.length());
++		}
++	}
++	
++	public static byte[] readBytes(InputStream stream, int length) throws IOException {
++		byte[] bytes = new byte[length];
++	
++		int n = 0, off = 0;
++		while (n < length) {
++			int count = stream.read(bytes, off + n, length - n);
++		  	if (count < 0) {
++				throw new IOException("premature end of stream");
++		  	}
++		  n += count;
++		}
++	
++		return bytes;
++	}
+ }
+-- 
+2.29.2.windows.3
+
