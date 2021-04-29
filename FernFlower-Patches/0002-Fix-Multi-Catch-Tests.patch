@@ -1,0 +1,34 @@
+From dbaebfce65ff143600b3365a0aa8772523a91488 Mon Sep 17 00:00:00 2001
+From: Su5eD <su5ed@outlook.com>
+Date: Thu, 29 Apr 2021 08:52:10 +0200
+Subject: [PATCH] Fix Multi-Catch Tests
+
+diff --git a/test/test/output/TestJavac7.java b/test/test/output/TestJavac7.java
+index 9ddb71e..d5e05fc 100644
+--- a/test/test/output/TestJavac7.java
++++ b/test/test/output/TestJavac7.java
+@@ -88,7 +88,7 @@ public class TestJavac7 {
+    public void testMultiCatch() {
+       try {
+          Method var1 = this.getClass().getDeclaredMethod("foo", new Class[0]);
+-      } catch (SecurityException var2) {
++      } catch (SecurityException | NoSuchMethodException var2) {
+          var2.printStackTrace();
+       }
+ 
+diff --git a/test/test/output/TestJavac8.java b/test/test/output/TestJavac8.java
+index 2b66907..3d817ba 100644
+--- a/test/test/output/TestJavac8.java
++++ b/test/test/output/TestJavac8.java
+@@ -60,7 +60,7 @@ public class TestJavac8 {
+    public void testMultiCatch() {
+       try {
+          Method var1 = this.getClass().getDeclaredMethod("foo", new Class[0]);
+-      } catch (SecurityException var2) {
++      } catch (SecurityException | NoSuchMethodException var2) {
+          var2.printStackTrace();
+       }
+ 
+-- 
+2.29.2.windows.3
+
