@@ -1,0 +1,231 @@
+From 7c305ceb564caedb40fb3b7bdc670f412423aa81 Mon Sep 17 00:00:00 2001
+From: Su5eD <su5ed@outlook.com>
+Date: Thu, 29 Apr 2021 08:06:10 +0200
+Subject: [PATCH] Add support for destination to be a zip file if there is only
+ one input, and it is a file.
+
+diff --git a/src/de/fernflower/main/decompiler/ConsoleDecompiler.java b/src/de/fernflower/main/decompiler/ConsoleDecompiler.java
+index b1c0334..018ec83 100644
+--- a/src/de/fernflower/main/decompiler/ConsoleDecompiler.java
++++ b/src/de/fernflower/main/decompiler/ConsoleDecompiler.java
+@@ -43,7 +43,7 @@ import de.fernflower.util.InterpreterUtil;
+ 
+ public class ConsoleDecompiler implements IBytecodeProvider, IDecompilatSaver {
+ 
+-	private File root;
++	protected File root;
+ 	
+ 	private Fernflower fernflower;
+ 	
+@@ -51,16 +51,17 @@ public class ConsoleDecompiler implements IBytecodeProvider, IDecompilatSaver {
+ 
+ 	private HashMap<String, HashSet<String>> mapArchiveEntries = new HashMap<String, HashSet<String>>(); 
+ 	
+-	public ConsoleDecompiler() {
+-		this(null);
++	public ConsoleDecompiler(File destination) {
++		this(destination, null);
+ 	}
+ 
+-	public ConsoleDecompiler(HashMap<String, Object> propertiesCustom) {
+-		this(new PrintStreamLogger(IFernflowerLogger.WARNING, System.out), propertiesCustom);
++	public ConsoleDecompiler(File destination, HashMap<String, Object> propertiesCustom) {
++		this(destination, new PrintStreamLogger(IFernflowerLogger.WARNING, System.out), propertiesCustom);
+ 	}
+ 	
+-	protected ConsoleDecompiler(IFernflowerLogger logger, HashMap<String, Object> propertiesCustom) {
+-		fernflower = new Fernflower(this, this, propertiesCustom);
++	protected ConsoleDecompiler(File destination, IFernflowerLogger logger, HashMap<String, Object> propertiesCustom) {
++		this.root = destination;
++		fernflower = new Fernflower(this, root.isDirectory() ? this : new SingleFileSaver(destination), propertiesCustom);
+ 		DecompilerContext.setLogger(logger);
+ 	}
+ 	
+@@ -104,6 +105,7 @@ public class ConsoleDecompiler implements IBytecodeProvider, IDecompilatSaver {
+ 					printHelp();
+ 				} else {
+ 					ConsoleDecompiler decompiler = new ConsoleDecompiler(
++							new File(args[args.length-1]),
+ 							new PrintStreamLogger(IFernflowerLogger.INFO, System.out),
+ 							mapOptions);
+ 
+@@ -115,7 +117,7 @@ public class ConsoleDecompiler implements IBytecodeProvider, IDecompilatSaver {
+ 						decompiler.addSpace(new File(library), false);
+ 					}
+ 					
+-					decompiler.decompileContext(new File(args[args.length-1]));
++					decompiler.decompileContext();
+ 				}
+ 				
+ 			} else {
+@@ -137,8 +139,7 @@ public class ConsoleDecompiler implements IBytecodeProvider, IDecompilatSaver {
+ 		fernflower.getStructcontext().addSpace(file, isOwn); 
+ 	}
+ 	
+-	public void decompileContext(File root) {
+-		this.root = root;
++	public void decompileContext() {
+ 		fernflower.decompileContext();
+ 	}
+ 	
+diff --git a/src/de/fernflower/main/decompiler/SingleFileSaver.java b/src/de/fernflower/main/decompiler/SingleFileSaver.java
+new file mode 100644
+index 0000000..e59d8f1
+--- /dev/null
++++ b/src/de/fernflower/main/decompiler/SingleFileSaver.java
+@@ -0,0 +1,129 @@
++package de.fernflower.main.decompiler;
++
++import de.fernflower.main.DecompilerContext;
++import de.fernflower.main.extern.IDecompilatSaver;
++import de.fernflower.main.extern.IFernflowerLogger;
++import de.fernflower.util.InterpreterUtil;
++
++import java.io.*;
++import java.util.HashSet;
++import java.util.Set;
++import java.util.jar.JarOutputStream;
++import java.util.jar.Manifest;
++import java.util.zip.ZipEntry;
++import java.util.zip.ZipFile;
++import java.util.zip.ZipOutputStream;
++
++public class SingleFileSaver implements IDecompilatSaver {
++    private final File target;
++    private ZipOutputStream output;
++    private Set<String> entries = new HashSet<>();
++
++    public SingleFileSaver(File target) {
++        this.target = target;
++    }
++
++    @Override
++    public void saveFolder(String path) {
++        if (!"".equals(path))
++            throw new UnsupportedOperationException("Targeted a single output, but tried to create a directory");
++    }
++
++    @Override
++    public void saveClassFile(String path, String qualifiedName, String entryName, String content) {
++        throw new UnsupportedOperationException("Targeted a single output, but tried to save a class file");
++    }
++
++    @Override
++    public void saveFile(String path, String filename, String content) {
++        try {
++            BufferedWriter out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(new File(getAbsolutePath(path), filename)), "UTF8"));
++            out.write(content);
++            out.flush();
++            out.close();
++        } catch(IOException ex) {
++            ex.printStackTrace();
++        }
++    }
++
++    private String getAbsolutePath(String path) {
++        return new File(target, path).getAbsolutePath();
++    }
++
++    @Override
++    public void copyFile(String source, String path, String entryName) {
++        throw new UnsupportedOperationException("Targeted a single output, but tried to copy file");
++    }
++
++    @Override
++    public void createArchive(String path, String archiveName, Manifest manifest) {
++        if (output != null)
++            throw new UnsupportedOperationException("Attempted to write multiple archives at the same time");
++        try {
++            FileOutputStream stream = new FileOutputStream(target);
++            output = manifest != null ? new JarOutputStream(stream, manifest) : new ZipOutputStream(stream);
++        } catch (IOException e) {
++            e.printStackTrace();
++        }
++    }
++
++    @Override
++    public void copyEntry(String source, String path, String archiveName, String entryName) {
++        if (!checkEntry(entryName))
++            return;
++
++        try (ZipFile srcArchive = new ZipFile(new File(source))) {
++            ZipEntry entry = srcArchive.getEntry(entryName);
++            if (entry != null) {
++                try (InputStream in = srcArchive.getInputStream(entry)) {
++                    output.putNextEntry(new ZipEntry(entryName));
++                    InterpreterUtil.copyInputStream(in, output);
++                }
++            }
++        }
++        catch (IOException ex) {
++            ex.printStackTrace();
++        }
++    }
++
++    @Override
++    public void saveClassEntry(String path, String archiveName, String qualifiedName, String entryName, String content) {
++        if (!checkEntry(entryName))
++            return;
++
++        try {
++            output.putNextEntry(new ZipEntry(entryName));
++            if (content != null)
++                output.write(content.getBytes("UTF-8"));
++        }
++        catch (IOException ex) {
++            ex.printStackTrace();
++        }
++    }
++
++    @Override
++    public void saveEntry(String path, String archivename, String entryName, String content) {
++
++    }
++
++    @Override
++    public void closeArchive(String path, String archiveName) {
++        try {
++            output.close();
++            entries.clear();
++            output = null;
++        }
++        catch (IOException ex) {
++            DecompilerContext.getLogger().writeMessage("Cannot close " + target, IFernflowerLogger.WARNING);
++        }
++    }
++
++    private boolean checkEntry(String entryName) {
++        boolean added = entries.add(entryName);
++        if (!added) {
++            String message = "Zip entry " + entryName + " already exists in " + target;
++            DecompilerContext.getLogger().writeMessage(message, IFernflowerLogger.WARNING);
++        }
++        return added;
++    }
++}
+diff --git a/src/de/fernflower/main/decompiler/WebDecompiler.java b/src/de/fernflower/main/decompiler/WebDecompiler.java
+index 7daf2a7..edf8bfb 100644
+--- a/src/de/fernflower/main/decompiler/WebDecompiler.java
++++ b/src/de/fernflower/main/decompiler/WebDecompiler.java
+@@ -27,16 +27,8 @@ public class WebDecompiler extends ConsoleDecompiler {
+ 	
+ 	private HashSet<String> setClassFiles = new HashSet<String>();
+ 	
+-	private File root;
+-	
+-	public WebDecompiler(IFernflowerLogger logger, HashMap<String, Object> propertiesCustom) {
+-		super(logger, propertiesCustom);
+-	}
+-
+-	@Override
+-	public void decompileContext(File root) {
+-		this.root = root;
+-		super.decompileContext(root);
++	public WebDecompiler(File destination, IFernflowerLogger logger, HashMap<String, Object> propertiesCustom) {
++		super(destination, logger, propertiesCustom);
+ 	}
+ 	
+ 	@Override
+-- 
+2.29.2.windows.3
+
