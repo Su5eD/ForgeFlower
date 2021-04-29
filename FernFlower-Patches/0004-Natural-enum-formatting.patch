@@ -1,0 +1,177 @@
+From 8a05e93b258883c3ca59d55821f912ff2f72751c Mon Sep 17 00:00:00 2001
+From: Su5eD <su5ed@outlook.com>
+Date: Thu, 29 Apr 2021 20:33:20 +0200
+Subject: [PATCH] Natural enum formatting
+
+diff --git a/src/de/fernflower/main/ClassWriter.java b/src/de/fernflower/main/ClassWriter.java
+index 5e6adda..362a654 100644
+--- a/src/de/fernflower/main/ClassWriter.java
++++ b/src/de/fernflower/main/ClassWriter.java
+@@ -694,6 +694,7 @@ public class ClassWriter {
+ 		boolean isInterface = (cl.access_flags & CodeConstants.ACC_INTERFACE) != 0;
+ 		boolean isAnnotation = (cl.access_flags & CodeConstants.ACC_ANNOTATION) != 0;
+ 
++		boolean isEnum = (cl.access_flags & CodeConstants.ACC_ENUM) != 0 && DecompilerContext.getOption(IFernflowerPreferences.DECOMPILE_ENUM);
+ 		boolean isDeprecated = mt.getAttributes().containsKey("Deprecated");
+ 		
+ 		String indstr = InterpreterUtil.getIndentString(indent);
+@@ -854,8 +855,9 @@ public class ClassWriter {
+ 			}
+ 			
+ 			boolean firstpar = true;
+-			int index = thisvar?1:0;
+-			for(int i=0;i<md.params.length;i++) {
++			int index = isEnum && init ? 3 : thisvar ? 1 : 0;
++			int start = isEnum && init ? 2 : 0;
++			for(int i=start;i<md.params.length;i++) {
+ 				if(signFields == null || signFields.get(i) == null) {
+ 					
+ 					if(!firstpar) {
+diff --git a/src/de/fernflower/main/EnumProcessor.java b/src/de/fernflower/main/EnumProcessor.java
+index 036b6b7..f5a131d 100644
+--- a/src/de/fernflower/main/EnumProcessor.java
++++ b/src/de/fernflower/main/EnumProcessor.java
+@@ -86,7 +86,8 @@ public class EnumProcessor {
+ 					NewExprent nexpr = (NewExprent)initializer;
+ 					if(nexpr.isAnonymous()) {
+ 						ClassNode child = DecompilerContext.getClassprocessor().getMapRootClasses().get(nexpr.getNewtype().value); 
+-						hideDummyFieldInConstant(child.wrapper);					}
++						hideDummyFieldInConstant(child.wrapper);
++					}
+ 				}
+ 			}
+ 		}
+diff --git a/src/de/fernflower/modules/decompiler/exps/InvocationExprent.java b/src/de/fernflower/modules/decompiler/exps/InvocationExprent.java
+index 8427cbf..6baa155 100644
+--- a/src/de/fernflower/modules/decompiler/exps/InvocationExprent.java
++++ b/src/de/fernflower/modules/decompiler/exps/InvocationExprent.java
+@@ -27,6 +27,7 @@ import de.fernflower.code.CodeConstants;
+ import de.fernflower.main.ClassWriter;
+ import de.fernflower.main.DecompilerContext;
+ import de.fernflower.main.ClassesProcessor.ClassNode;
++import de.fernflower.main.extern.IFernflowerPreferences;
+ import de.fernflower.main.rels.MethodWrapper;
+ import de.fernflower.modules.decompiler.ExprProcessor;
+ import de.fernflower.modules.decompiler.vars.CheckTypesResult;
+@@ -316,6 +317,7 @@ public class InvocationExprent extends Exprent {
+ 		}
+ 		
+ 		List<VarVersionPaar> sigFields = null;
++		boolean isEnum = false;
+ 		if(functype == TYP_INIT) {
+ 			ClassNode newnode = DecompilerContext.getClassprocessor().getMapRootClasses().get(classname); 
+ 			
+@@ -328,13 +330,15 @@ public class InvocationExprent extends Exprent {
+ 						sigFields.set(0, new VarVersionPaar(-1, 0));
+ 					}
+ 				}
++				isEnum = (newnode.classStruct.access_flags & CodeConstants.ACC_ENUM) != 0 && DecompilerContext.getOption(IFernflowerPreferences.DECOMPILE_ENUM);
+ 			}
+ 		}
+ 		
+ 		Set<Integer> setAmbiguousParameters = getAmbiguousParameters();
+ 		
+ 		boolean firstpar = true;
+-		for(int i=0;i<lstParameters.size();i++) {
++		int start = isEnum ? 2 : 0;
++		for(int i=start;i<lstParameters.size();i++) {
+ 			if(sigFields == null || sigFields.get(i) == null) {
+ 				if(!firstpar) {
+ 					buf.append(", ");
+diff --git a/src/de/fernflower/modules/decompiler/exps/NewExprent.java b/src/de/fernflower/modules/decompiler/exps/NewExprent.java
+index 3e636d7..8253c7d 100644
+--- a/src/de/fernflower/modules/decompiler/exps/NewExprent.java
++++ b/src/de/fernflower/modules/decompiler/exps/NewExprent.java
+@@ -163,7 +163,7 @@ public class NewExprent extends Exprent {
+ 	}
+ 	
+ 	public String toJava(int indent) {
+-		StringBuffer buf = new StringBuffer();
++		StringBuilder buf = new StringBuilder();
+ 		
+ 		if(anonymous) {
+ 			
+@@ -191,7 +191,11 @@ public class NewExprent extends Exprent {
+ 				}
+ 				
+ 				boolean firstpar = true;
+-				for(int i=0;i<invsuper.getLstParameters().size();i++) {
++				int start = 0, end = invsuper.getLstParameters().size();
++				if(enumconst) {
++					start += 2; end -= 1;
++				}
++				for(int i=start;i<end;i++) {
+ 					if(sigFields == null || sigFields.get(i) == null) {
+ 						if(!firstpar) {
+ 							buf.append(", ");
+@@ -240,6 +244,10 @@ public class NewExprent extends Exprent {
+ 			
+ 			buf.append(")");
+ 			
++			if(enumconst && buf.length() == 2) {
++				buf.setLength(0);
++			}
++			
+ 			StringWriter strwriter = new StringWriter();
+ 			BufferedWriter bufstrwriter = new BufferedWriter(strwriter);
+ 			
+@@ -298,24 +306,28 @@ public class NewExprent extends Exprent {
+ 						}
+ 					}
+ 					
+-					buf.append("(");
+-					
+-					boolean firstpar = true;
+-					for(int i=0;i<lstParameters.size();i++) {
+-						if(sigFields == null || sigFields.get(i) == null) {
+-							if(!firstpar) {
+-								buf.append(", ");
+-							}
++					int start = enumconst ? 2 : 0;
++     				if(!enumconst || start < lstParameters.size()) {
++     					buf.append("(");
++
++       					boolean firstpar = true;
++       					for(int i=start;i<lstParameters.size();i++) {
++         					if(sigFields == null || sigFields.get(i) == null) {
++           						if(!firstpar) {
++             						buf.append(", ");
++           						}
+ 							
+ 							StringBuilder buff = new StringBuilder();
+ 							ExprProcessor.getCastedExprent(lstParameters.get(i), constructor.getDescriptor().params[i], buff, indent, true);
+ 							
+-							buf.append(buff);
+-							firstpar = false;
+-						}
+-					}
+-					buf.append(")");
+-				}
++           					buf.append(buff);
++           					firstpar = false; 
++							}
++       					}
++       					buf.append(")");
++     				}
++   				}
++			
+ 				
+ 				if(!enumconst) {
+ 					String enclosing = null;
+@@ -341,11 +353,11 @@ public class NewExprent extends Exprent {
+ 				}
+ 				
+ 			} else {
+-				buf.append("new "+ExprProcessor.getTypeName(newtype));
++				buf.append("new ").append(ExprProcessor.getTypeName(newtype));
+ 
+ 				if(lstArrayElements.isEmpty()) {
+ 	 				for(int i=0;i<newtype.arraydim;i++) {
+-						buf.append("["+(i<lstDims.size()?lstDims.get(i).toJava(indent):"")+"]");
++						buf.append("[").append(i < lstDims.size() ? lstDims.get(i).toJava(indent) : "").append("]");
+ 					}
+ 				} else {
+ 	 				for(int i=0;i<newtype.arraydim;i++) {
+-- 
+2.29.2.windows.3
+
