@@ -1,0 +1,38 @@
+From 4aae26b61bb9d50d788fdb78a030685ef0fefc58 Mon Sep 17 00:00:00 2001
+From: Su5eD <su5ed@outlook.com>
+Date: Sat, 1 May 2021 12:13:30 +0200
+Subject: [PATCH] Fix 'Initializer in a nested class disappears' (backport of commit c672e5b)
+
+diff --git a/src/de/fernflower/main/InitializerProcessor.java b/src/de/fernflower/main/InitializerProcessor.java
+index ecbb9bd..97a0e28 100644
+--- a/src/de/fernflower/main/InitializerProcessor.java
++++ b/src/de/fernflower/main/InitializerProcessor.java
+@@ -208,7 +208,9 @@ public class InitializerProcessor {
+ 					AssignmentExprent asexpr = (AssignmentExprent)exprent;
+ 					if(asexpr.getLeft().type == Exprent.EXPRENT_FIELD) {
+ 						FieldExprent fexpr = (FieldExprent)asexpr.getLeft();
+-						if(!fexpr.isStatic() && fexpr.getClassname().equals(cl.qualifiedName)) {
++						if(!fexpr.isStatic() && fexpr.getClassname().equals(cl.qualifiedName) &&
++								cl.hasField(fexpr.getName(), fexpr.getDescriptor().descriptorString)) { // check for the physical existence of the field. Could be defined in a superclass.
++							
+ 							if(isExprentIndependent(asexpr.getRight(), lstMethWrappers.get(i))) {
+ 								String fieldKey = InterpreterUtil.makeUniqueKey(fexpr.getName(), fexpr.getDescriptor().descriptorString);
+ 								if(fieldWithDescr == null) {
+diff --git a/src/de/fernflower/struct/StructClass.java b/src/de/fernflower/struct/StructClass.java
+index 3f1d687..ca5a0a2 100644
+--- a/src/de/fernflower/struct/StructClass.java
++++ b/src/de/fernflower/struct/StructClass.java
+@@ -118,6 +118,10 @@ public class StructClass {
+ 	// public methods
+ 	// *****************************************************************************
+ 
++	public boolean hasField(String name, String descriptor) {
++		return getField(name, descriptor) != null;
++	}
++		
+ 	public StructField getField(String name, String descriptor) {
+ 		return fields.getWithKey(InterpreterUtil.makeUniqueKey(name, descriptor));
+ 	}
+-- 
+2.29.2.windows.3
+
