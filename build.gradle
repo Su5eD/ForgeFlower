@@ -2,7 +2,7 @@ buildscript {
     repositories {
         mavenLocal()
         mavenCentral()
-        maven { url = 'https://files.minecraftforge.net/maven/'}
+        maven { url = 'https://maven.minecraftforge.net/'}
     }
     dependencies {
         classpath 'net.minecraftforge:gitpatcher:0.10.+'
@@ -73,7 +73,7 @@ def gitVersion() {
     def branch = info.branch
     if (branch != null && branch.startsWith('pulls/'))
         branch = 'pr' + branch.rsplit('/', 1)[1]
-    if (branch in [null, 'master', 'HEAD'])
+    if (branch in [null, 'Legacy-0.8.4', 'HEAD'])
         return "${info.tag}.${info.offset}".toString()
     return "${info.tag}.${info.offset}-${branch}".toString()
 }
